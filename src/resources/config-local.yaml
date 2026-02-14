@@ -1,0 +1,25 @@
+llm:
+  provider: openrouter
+  base_url: https://openrouter.ai/api/v1/chat/completions
+  api_key_env: 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
+  model: openai/gpt-4.1
+  temperature: 0.0
+  top_p: 1.0
+  max_tokens: 1200
+
+embeddings:
+  provider: openrouter
+  base_url: https://openrouter.ai/api/v1/embeddings
+  api_key_env: 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
+  model: text-embedding-3-small # should use text-embedding-3-large for large documents
+
+ingestion:
+  raw_dir: data/raw
+  persist_dir: data/chroma_db
+  collection_name: contracts
+  chunk_size: 1100
+  chunk_overlap: 200
+  reset_collection: false
+
+
+
