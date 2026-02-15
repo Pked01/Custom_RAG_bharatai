@@ -18,6 +18,7 @@ from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+from src.agents.agent_util import normalize_openai_base_url, openrouter_headers
 from src.datamodel.ingestion import ParsedContract, ParsedSection, SemanticChunk
 from src.utils.config import AppConfig, get_api_key, load_config
 
@@ -108,16 +109,26 @@ class DocumentProcessor:
 		]
 
 		embeddings_api_key = get_api_key(self.config.embeddings.api_key_env)
+		embeddings_headers = openrouter_headers(
+			self.config.embeddings.http_referer,
+			self.config.embeddings.x_title,
+		)
+		embeddings_kwargs = {}
+		if embeddings_headers:
+			embeddings_kwargs["default_headers"] = embeddings_headers
+
 		embeddings = OpenAIEmbeddings(
 			model=self.config.embeddings.model,
 			api_key=embeddings_api_key,
-			base_url=self.config.embeddings.base_url,
+			base_url=normalize_openai_base_url(self.config.embeddings.base_url),
+			**embeddings_kwargs,
 		)
 		vector_store = Chroma.from_documents(
 			documents=vector_documents,
 			embedding=embeddings,
 			persist_directory=str(persist_path),
 			collection_name=self.config.ingestion.collection_name,
+			collection_metadata={"hnsw:space": self.config.ingestion.vector_space},
 		)
 		if hasattr(vector_store, "persist"):
 			vector_store.persist()
@@ -220,3 +231,4 @@ class DocumentProcessor:
 			output.append(SemanticChunk(content=chunk_text, metadata=metadata))
 
 		return output
+

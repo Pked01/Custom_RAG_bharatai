@@ -9,6 +9,18 @@ import yaml
 from src.datamodel.config import AppConfig, EmbeddingConfig, IngestionConfig, LLMConfig
 
 
+def _to_bool(value: Any) -> bool:
+	if isinstance(value, bool):
+		return value
+	if isinstance(value, str):
+		normalized = value.strip().lower()
+		if normalized in {"true", "1", "yes", "y", "on"}:
+			return True
+		if normalized in {"false", "0", "no", "n", "off"}:
+			return False
+	raise ValueError(f"Invalid boolean value: {value}")
+
+
 def _read_config_data(config_path: str | Path = "src/resources/config-local.yaml") -> dict[str, Any]:
 	path = Path(config_path)
 	if not path.exists():
@@ -43,21 +55,25 @@ def _build_config_from_section(
 	converters: dict[str, Callable[[Any], Any]] | None = None,
 ):
 	converters = converters or {}
-	required_keys = set(config_class.model_fields.keys())
+	model_fields = config_class.model_fields
+	required_keys = {name for name, field in model_fields.items() if field.is_required()}
+	allowed_keys = set(model_fields.keys())
 
 	missing_keys = [key for key in required_keys if key not in section_data]
 	if missing_keys:
 		missing_text = ", ".join(f"{section_name}.{key}" for key in sorted(missing_keys))
 		raise ValueError(f"Missing required keys in config: {missing_text}")
 
-	extra_keys = [key for key in section_data.keys() if key not in required_keys]
+	extra_keys = [key for key in section_data.keys() if key not in allowed_keys]
 	if extra_keys:
 		extra_text = ", ".join(f"{section_name}.{key}" for key in sorted(extra_keys))
 		raise ValueError(f"Unknown keys in config: {extra_text}")
 
 	normalized_data: dict[str, Any] = {}
-	for key in required_keys:
-		value = _required(section_data, key, section_name)
+	for key in allowed_keys:
+		if key not in section_data:
+			continue
+		value = section_data[key]
 		if key in converters:
 			value = converters[key](value)
 		normalized_data[key] = value
@@ -80,6 +96,8 @@ def load_llm_config(config_path: str | Path = "src/resources/config-local.yaml")
 			"temperature": float,
 			"top_p": float,
 			"max_tokens": int,
+			"http_referer": lambda value: str(value) if value is not None else None,
+			"x_title": lambda value: str(value) if value is not None else None,
 		},
 	)
 
@@ -96,6 +114,8 @@ def load_embeddings_config(config_path: str | Path = "src/resources/config-local
 			"base_url": str,
 			"api_key_env": str,
 			"model": str,
+			"http_referer": lambda value: str(value) if value is not None else None,
+			"x_title": lambda value: str(value) if value is not None else None,
 		},
 	)
 
@@ -111,9 +131,10 @@ def load_ingestion_config(config_path: str | Path = "src/resources/config-local.
 			"raw_dir": str,
 			"persist_dir": str,
 			"collection_name": str,
+			"vector_space": lambda value: str(value).strip().lower(),
 			"chunk_size": int,
 			"chunk_overlap": int,
-			"reset_collection": bool,
+			"reset_collection": _to_bool,
 		},
 	)
 

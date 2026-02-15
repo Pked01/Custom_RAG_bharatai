@@ -1,2 +1,4 @@
 RIL - Take-Home Assignment.docx
 data/raw/*
+data/chroma_db/*
+__pycache__

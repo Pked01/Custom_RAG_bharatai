@@ -159,6 +159,7 @@ sqlalchemy==2.0.35
     # via
     #   langchain
     #   langchain-community
+streamlit==1.51.0
 tenacity==9.1.2
     # via
     #   langchain
