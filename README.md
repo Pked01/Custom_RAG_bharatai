@@ -42,14 +42,14 @@ The project is designed around two major pipelines:
 
 ## 3) Agent Flow Chart
 
-[Mermaid flowchart illustrating the agent interactions](docs/images/agent_flow_chart.png)
+![Mermaid flowchart illustrating the agent interactions](docs/images/agent_flow_chart.png)
 
 
 ---
 
 ## 4) Whole RAG Flow Chart
 
-[Mermaid flowchart illustrating the whole RAG flow](docs/images/whole_rag_flow_chart.png)
+![Mermaid flowchart illustrating the whole RAG flow](docs/images/whole_rag_flow_chart.png)
 
 ---
 
@@ -79,7 +79,7 @@ The project is designed around two major pipelines:
 
 ### Ingestion Flow Chart
 
-[Mermaid flowchart illustrating the ingestion flow](docs/images/ingestion_flow_chart.png)                                       
+![Mermaid flowchart illustrating the ingestion flow](docs/images/ingestion_flow_chart.png)                                       
 
 ---
 
