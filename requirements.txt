@@ -37,6 +37,8 @@ frozenlist==1.8.0
     # via
     #   aiohttp
     #   aiosignal
+fastapi==0.118.2
+    # via -r requirements.in
 greenlet==3.3.0
     # via sqlalchemy
 h11==0.16.0
@@ -186,6 +188,8 @@ typing-inspection==0.4.2
     # via
     #   pydantic
     #   pydantic-settings
+uvicorn==0.37.0
+    # via -r requirements.in
 urllib3==2.6.3
     # via requests
 yarl==1.22.0
