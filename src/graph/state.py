@@ -14,6 +14,7 @@ class AgentState(TypedDict, total=False):
 	retrieved_clauses: list[dict[str, Any]]
 	risk_report: list[str]
 	final_answer: str
+	auditor_response: dict[str, Any]  # Structured auditor output
 	retrieval_confidence: float
 	retrieval_warning_threshold: float
 	retrieval_warning: str

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 from langchain_core.messages import AIMessage, HumanMessage
@@ -221,14 +223,119 @@ def _render_retrieved_clauses(state: dict[str, Any], key_prefix: str = "default"
 
 
 def _render_risk_report(state: dict[str, Any]) -> None:
+	"""Render structured risk report with citations and clickable links."""
+	auditor_response = state.get("auditor_response")
+
+	# Handle new structured format
+	if auditor_response and isinstance(auditor_response, dict):
+		_render_structured_auditor_response(auditor_response, state)
+		return
+
+	# Fallback to legacy format
 	risk_report = state.get("risk_report", [])
 	if not risk_report:
 		st.info("No risk report generated yet.")
 		return
 
-	st.write("Risk Report")
+	st.write("Risk Report (Legacy Format)")
 	for line in risk_report:
 		st.write(f"- {line}")
+
+
+def _render_structured_auditor_response(response: dict[str, Any], state: dict[str, Any]) -> None:
+	"""Render the new structured auditor response with citations."""
+	answer_status = response.get("answer_status", "partial")
+	primary_answer = response.get("primary_answer", "")
+	confidence = response.get("confidence", "low")
+	risks = response.get("risks", [])
+	citations = response.get("citations", [])
+	unanswered = response.get("unanswered_aspects", [])
+	suggested_followup = response.get("suggested_followup")
+	needs_human_review = response.get("needs_human_review", False)
+	review_reason = response.get("review_reason")
+
+	# Status indicator
+	status_colors = {
+		"answered": "🟢",
+		"partial": "🟡",
+		"cannot_answer": "🔴",
+		"needs_clarification": "🟠",
+	}
+	status_icon = status_colors.get(answer_status, "⚪")
+
+	st.markdown("### Analysis Result")
+
+	# Primary answer card
+	confidence_badge = {"high": "🟢 High", "medium": "🟡 Medium", "low": "🔴 Low"}.get(confidence, confidence)
+	st.markdown(f"**Status:** {status_icon} {answer_status.replace('_', ' ').title()} | **Confidence:** {confidence_badge}")
+
+	if primary_answer:
+		st.markdown(f"**Answer:** {primary_answer}")
+
+	if response.get("confidence_reason"):
+		st.caption(f"Confidence reason: {response.get('confidence_reason')}")
+
+	# Risks section
+	if risks:
+		st.markdown("#### Identified Risks")
+		for risk in risks:
+			severity = risk.get("severity", "low")
+			severity_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(severity, "⚪")
+			title = risk.get("title", "Unnamed Risk")
+			description = risk.get("description", "")
+			citation_ids = risk.get("citation_ids", [])
+
+			# Build citation links
+			citation_refs = ""
+			if citation_ids and citations:
+				refs = []
+				for cid in citation_ids:
+					cit = next((c for c in citations if c.get("id") == cid), None)
+					if cit:
+						refs.append(f"[{cid}]")
+				citation_refs = " " + " ".join(refs)
+
+			with st.expander(f"{severity_icon} **{title}** {citation_refs}", expanded=True):
+				st.write(description)
+				if risk.get("quote_snippet"):
+					st.caption(f'"{risk.get("quote_snippet")}"')
+
+	# Citations section with document links
+	if citations:
+		st.markdown("#### Sources")
+		raw_dir = _resolve_path("data/raw")
+		for cit in citations:
+			cit_id = cit.get("id", "?")
+			file_name = cit.get("file_name", "unknown")
+			section_num = cit.get("section_number", "")
+			section_header = cit.get("section_header", "")
+			quote = cit.get("verbatim_quote", "")
+
+			# Build file link
+			file_path = raw_dir / file_name
+			if file_path.exists():
+				file_uri = file_path.as_uri()
+				link_text = f"[{file_name}]({file_uri})"
+			else:
+				link_text = file_name
+
+			with st.expander(f"[{cit_id}] {link_text} § {section_num} — {section_header}"):
+				st.markdown(f"**Section:** {section_num} {section_header}")
+				st.markdown(f"**Quote:** \"{quote}\"")
+
+	# Unanswered aspects
+	if unanswered:
+		st.markdown("#### Not Covered")
+		for aspect in unanswered:
+			st.write(f"- {aspect}")
+
+	# Suggested follow-up
+	if suggested_followup:
+		st.info(f"**Suggested follow-up:** {suggested_followup}")
+
+	# Human review warning
+	if needs_human_review:
+		st.warning(f"⚠️ **Human review recommended:** {review_reason or 'Manual verification advised.'}")
 
 
 def _render_agents_panel() -> None:
@@ -332,63 +439,248 @@ def _render_agents_panel() -> None:
 
 
 def _render_graph_panel() -> None:
-	st.subheader("Graph")
+	"""Render Graph panel as a chatbot UI with scrollable conversation history."""
+	st.subheader("Contract Analysis Chat")
 	guardian_config = load_guardian_config()
 	default_reflection = (guardian_config.mode or "evaluate_only").strip().lower() == "reflect"
-	st.caption("Run full LangGraph flow with checkpointed memory by thread_id.")
-	st.info("Graph sequence: Supervisor/Rewriter → Researcher → (if evidence exists) Risk Auditor → Legal Guardian.")
 
-	thread_id = st.text_input("Thread ID", value="demo-thread")
-	query = st.text_area("User Query", value="What are the liability risks in the vendor agreements?", height=100)
-	enable_reflection = st.checkbox(
-		"Enable reflection loop for this graph run",
-		value=default_reflection,
-		key="graph_enable_reflection",
-	)
+	# Initialize chat session state
+	if "chat_history" not in st.session_state:
+		st.session_state["chat_history"] = []
+	if "chat_thread_id" not in st.session_state:
+		st.session_state["chat_thread_id"] = "chat-session-1"
 
-	if st.button("Run Graph", type="primary"):
+	# Sidebar controls
+	with st.sidebar:
+		st.markdown("### Chat Settings")
+		thread_id = st.text_input(
+			"Thread ID",
+			value=st.session_state["chat_thread_id"],
+			key="chat_thread_input",
+		)
+		st.session_state["chat_thread_id"] = thread_id
+
+		enable_reflection = st.checkbox(
+			"Enable reflection loop",
+			value=default_reflection,
+			key="chat_enable_reflection",
+		)
+
+		show_debug = st.checkbox("Show debug info", value=False, key="chat_show_debug")
+
+		if st.button("🗑️ Clear Chat", type="secondary"):
+			st.session_state["chat_history"] = []
+			st.rerun()
+
+	# Chat info banner
+	st.caption(f"Thread: `{thread_id}` | Guardian mode: `{guardian_config.mode}` | Reflection: `{enable_reflection}`")
+
+	# Display chat history (scrollable)
+	chat_container = st.container()
+	with chat_container:
+		for entry in st.session_state["chat_history"]:
+			role = entry.get("role", "user")
+			content = entry.get("content", "")
+			state_snapshot = entry.get("state")
+
+			if role == "user":
+				with st.chat_message("user"):
+					st.write(content)
+			else:
+				with st.chat_message("assistant"):
+					# Render primary answer
+					if state_snapshot:
+						auditor_response = state_snapshot.get("auditor_response")
+						if auditor_response:
+							_render_chat_response(auditor_response, state_snapshot, show_debug)
+						else:
+							st.write(content)
+
+						# Show retrieval/guardian info
+						if show_debug:
+							with st.expander("🔍 Debug Info"):
+								st.write(f"Rewritten Query: {state_snapshot.get('rewritten_query', '')}")
+								st.write(f"Retrieval Confidence: {state_snapshot.get('retrieval_confidence', 0.0):.2f}")
+								st.write(f"Faithfulness: {state_snapshot.get('faithfulness_score', 0.0):.2f}")
+								st.write(f"Answer Relevancy: {state_snapshot.get('answer_relevancy_score', 0.0):.2f}")
+								if state_snapshot.get("correction_needed"):
+									st.warning(f"Correction needed: {state_snapshot.get('correction_reason')}")
+					else:
+						st.write(content)
+
+	# Chat input
+	user_input = st.chat_input("Ask about your contracts...")
+
+	if user_input:
+		# Add user message to history
+		st.session_state["chat_history"].append({"role": "user", "content": user_input})
+
+		# Run graph
 		try:
-			app = build_graph()
-			result = app.invoke(
-				{
-					"messages": [HumanMessage(content=query)],
-					"user_query": query,
-					"enable_reflection": enable_reflection,
-				},
-				config={"configurable": {"thread_id": thread_id}},
-			)
-			st.success("Graph executed successfully.")
-			st.markdown("### Final State")
-			st.json(_state_to_json_safe(result))
-
-			st.markdown("### Outputs")
-			st.write(f"Rewritten Query: {result.get('rewritten_query', '')}")
-			st.write(f"Guardian Mode (config): {guardian_config.mode}")
-			st.write(f"Reflection Enabled (runtime): {result.get('enable_reflection', enable_reflection)}")
-			st.write(
-				f"Retrieval Confidence: {result.get('retrieval_confidence', 0.0)} "
-				f"(warning threshold: {result.get('retrieval_warning_threshold', 0.35)})"
-			)
-			st.write(
-				f"Faithfulness: {result.get('faithfulness_score', 0.0)} | "
-				f"Answer Relevancy: {result.get('answer_relevancy_score', 0.0)}"
-			)
-			if result.get("correction_needed"):
-				st.warning(f"Correction needed: {result.get('correction_reason', 'Unspecified reason')}")
-			if result.get("retrieval_warning"):
-				st.info(result.get("retrieval_warning"))
-			if result.get("needs_clarification"):
-				st.warning(result.get("clarifying_question", "Clarification required."))
-			_render_retrieved_clauses(result, key_prefix="graph")
-			_render_risk_report(result)
-		except Exception as exc:
-			st.error(f"Graph run failed: {exc}")
-			error_text = str(exc).lower()
-			if "401" in error_text or "user not found" in error_text or "unauthorized" in error_text:
-				st.info(
-					"Authentication failed. Check `llm.api_key_env` / `embeddings.api_key_env`, "
-					"ensure the environment variable exists, and verify the OpenRouter key is active."
+			with st.spinner("Analyzing contracts..."):
+				app = build_graph()
+				result = app.invoke(
+					{
+						"messages": [HumanMessage(content=user_input)],
+						"user_query": user_input,
+						"enable_reflection": enable_reflection,
+					},
+					config={"configurable": {"thread_id": thread_id}},
 				)
+
+			# Extract assistant response
+			final_answer = result.get("final_answer", "I couldn't generate a response.")
+
+			# Add assistant response to history
+			st.session_state["chat_history"].append({
+				"role": "assistant",
+				"content": final_answer,
+				"state": result,
+			})
+
+		except Exception as exc:
+			error_msg = f"Error: {exc}"
+			st.session_state["chat_history"].append({
+				"role": "assistant",
+				"content": error_msg,
+				"state": None,
+			})
+
+		st.rerun()
+
+
+def _render_chat_response(auditor_response: dict[str, Any], state: dict[str, Any], show_debug: bool) -> None:
+	"""Render a clean, user-friendly chat response with linked inline citations."""
+	answer_status = auditor_response.get("answer_status", "partial")
+	primary_answer = auditor_response.get("primary_answer", "")
+	confidence = auditor_response.get("confidence", "low")
+	is_comparison_query = auditor_response.get("is_comparison_query", False)
+	topic_comparisons = auditor_response.get("topic_comparisons", [])
+	risks = auditor_response.get("risks", [])
+	citations = auditor_response.get("citations", [])
+	suggested_followup = auditor_response.get("suggested_followup")
+	needs_human_review = auditor_response.get("needs_human_review", False)
+	raw_dir = _resolve_path("data/raw")
+
+	# ─────────────────────────────────────────────────────────────
+	# Build citation lookup: id -> {file_name, section, quote, link}
+	# ─────────────────────────────────────────────────────────────
+	citation_map: dict[int, dict[str, Any]] = {}
+	for cit in citations:
+		cit_id = cit.get("id")
+		if cit_id is None:
+			continue
+		file_name = cit.get("file_name", "unknown")
+		section = f"§{cit.get('section_number', '')} {cit.get('section_header', '')}".strip()
+		quote = cit.get("verbatim_quote", "")
+
+		# Build file link
+		file_path = raw_dir / file_name
+		if file_path.exists():
+			file_uri = file_path.as_uri()
+			link = f"[{file_name}]({file_uri})"
+		else:
+			link = file_name
+
+		citation_map[cit_id] = {
+			"file_name": file_name,
+			"section": section,
+			"quote": quote,
+			"link": link,
+		}
+
+	def _linkify_citations(text: str) -> str:
+		"""Replace [N] with superscript citations."""
+		def replace_cite(match):
+			cite_num = int(match.group(1))
+			if cite_num in citation_map:
+				return f"<sup>[{cite_num}]</sup>"
+			return match.group(0)
+		return re.sub(r"\[(\d+)\]", replace_cite, text)
+
+	# ─────────────────────────────────────────────────────────────
+	# 1. PRIMARY ANSWER — With inline citation superscripts
+	# ─────────────────────────────────────────────────────────────
+	if answer_status == "cannot_answer":
+		st.warning(primary_answer)
+	elif answer_status == "needs_clarification":
+		st.info(primary_answer)
+	else:
+		linked_answer = _linkify_citations(primary_answer)
+		st.markdown(linked_answer, unsafe_allow_html=True)
+
+	# ─────────────────────────────────────────────────────────────
+	# 2. COMPARISON TABLE (for cross-document queries)
+	# ─────────────────────────────────────────────────────────────
+	if is_comparison_query and topic_comparisons:
+		st.markdown("---")
+		for comp in topic_comparisons:
+			topic = comp.get("topic", "Unknown Topic")
+			positions = comp.get("positions", [])
+			has_conflict = comp.get("has_conflict", False)
+			conflict_desc = comp.get("conflict_description", "")
+
+			table_data: list[dict[str, str]] = []
+			for pos in positions:
+				file_name = pos.get("file_name", "unknown")
+				position_text = pos.get("position", "")
+				table_data.append({"Document": file_name, "States": position_text})
+
+			conflict_indicator = "⚠️ Conflict" if has_conflict else "✓ Aligned"
+			st.markdown(f"**{topic}** — {conflict_indicator}")
+
+			if table_data:
+				df = pd.DataFrame(table_data)
+				st.dataframe(df, use_container_width=True, hide_index=True)
+
+			if has_conflict and conflict_desc:
+				st.caption(f"↳ {conflict_desc}")
+
+	# ─────────────────────────────────────────────────────────────
+	# 3. KEY FINDINGS (for risk queries)
+	# ─────────────────────────────────────────────────────────────
+	if risks and not is_comparison_query:
+		st.markdown("---")
+		top_risk = risks[0] if risks else None
+		if top_risk:
+			title = top_risk.get("title", "")
+			desc = top_risk.get("description", "")
+			st.markdown(f"**Key Finding:** {title}")
+			linked_desc = _linkify_citations(desc)
+			st.markdown(linked_desc, unsafe_allow_html=True)
+
+		if len(risks) > 1:
+			with st.expander(f"See {len(risks) - 1} more finding(s)"):
+				for risk in risks[1:]:
+					desc = risk.get("description", "")
+					linked_desc = _linkify_citations(desc)
+					st.markdown(f"• **{risk.get('title', '')}**: {linked_desc}", unsafe_allow_html=True)
+
+	# ─────────────────────────────────────────────────────────────
+	# 4. SOURCES — Linked to inline [N] references
+	# ─────────────────────────────────────────────────────────────
+	if citation_map:
+		st.markdown("---")
+		st.markdown("**Sources:**")
+		for cit_id in sorted(citation_map.keys()):
+			cit = citation_map[cit_id]
+			st.markdown(f"**[{cit_id}]** {cit['link']} {cit['section']}")
+			if show_debug and cit.get("quote"):
+				quote = cit["quote"]
+				st.caption(f'> "{quote[:200]}{"..." if len(quote) > 200 else ""}"')
+
+	# ─────────────────────────────────────────────────────────────
+	# 5. FOLLOW-UP & REVIEW FLAGS
+	# ─────────────────────────────────────────────────────────────
+	if suggested_followup:
+		st.info(f"💡 **Suggested next step:** {suggested_followup}")
+
+	if needs_human_review:
+		st.warning(f"⚠️ **Review recommended:** {auditor_response.get('review_reason', 'Manual verification advised')}")
+
+	if show_debug:
+		conf_icons = {"high": "🟢", "medium": "🟡", "low": "🔴"}
+		st.caption(f"Status: {answer_status} | Confidence: {conf_icons.get(confidence, '')} {confidence}")
 
 
 def main() -> None:
