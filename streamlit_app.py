@@ -9,6 +9,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from src.agents.researcher import researcher_node
 from src.agents.risk_auditor import risk_auditor_node
 from src.agents.supervisor import query_rewriter_node
+from src.agents.legal_guardian import legal_guardian_node
 from src.graph.builder import build_graph
 from src.ingestion.processor import DocumentProcessor
 from src.utils.config import load_config
@@ -164,7 +165,7 @@ def _render_agents_panel() -> None:
 	st.subheader("Agents")
 	st.caption("Run nodes independently or run full pipeline. Supervisor behavior is implemented through the query rewriter step.")
 	st.info(
-		"Sequence: 1) Supervisor/Rewriter → 2) Researcher → 3) Risk Auditor. "
+		"Sequence: 1) Supervisor/Rewriter → 2) Researcher → 3) Risk Auditor → 4) Legal Guardian. "
 		"Use 'Run Full Pipeline' for normal usage."
 	)
 
@@ -180,7 +181,7 @@ def _render_agents_panel() -> None:
 	user_query = st.text_area("User Query", value=state.get("user_query", ""), height=100)
 	current_focus = st.text_input("Current Document Focus (optional)", value=state.get("current_doc_focus", ""))
 
-	col1, col2, col3 = st.columns(3)
+	col1, col2, col3, col6 = st.columns(4)
 	if col1.button("1) Run Supervisor/Rewriter"):
 		state["user_query"] = user_query
 		if current_focus:
@@ -202,6 +203,12 @@ def _render_agents_panel() -> None:
 			state["current_doc_focus"] = current_focus
 		state.update(risk_auditor_node(state))
 
+	if col6.button("4) Run Legal Guardian"):
+		state["user_query"] = user_query
+		if current_focus:
+			state["current_doc_focus"] = current_focus
+		state.update(legal_guardian_node(state))
+
 	col4, col5 = st.columns(2)
 	if col4.button("Run Full Pipeline", type="primary"):
 		state["user_query"] = user_query
@@ -212,6 +219,7 @@ def _render_agents_panel() -> None:
 		state.update(researcher_node(state))
 		if not state.get("needs_clarification", False):
 			state.update(risk_auditor_node(state))
+			state.update(legal_guardian_node(state))
 
 	if col5.button("Reset Agent State"):
 		st.session_state["agent_state"] = {
@@ -230,6 +238,12 @@ def _render_agents_panel() -> None:
 		f"Retrieval Confidence: {state.get('retrieval_confidence', 0.0)} "
 		f"(warning threshold: {state.get('retrieval_warning_threshold', 0.35)})"
 	)
+	st.write(
+		f"Faithfulness: {state.get('faithfulness_score', 0.0)} | "
+		f"Answer Relevancy: {state.get('answer_relevancy_score', 0.0)}"
+	)
+	if state.get("correction_needed"):
+		st.warning(f"Correction needed: {state.get('correction_reason', 'Unspecified reason')}")
 	if state.get("retrieval_warning"):
 		st.info(state.get("retrieval_warning"))
 	if state.get("needs_clarification"):
@@ -241,7 +255,7 @@ def _render_agents_panel() -> None:
 def _render_graph_panel() -> None:
 	st.subheader("Graph")
 	st.caption("Run full LangGraph flow with checkpointed memory by thread_id.")
-	st.info("Graph sequence: Supervisor/Rewriter → Researcher → (if evidence exists) Risk Auditor.")
+	st.info("Graph sequence: Supervisor/Rewriter → Researcher → (if evidence exists) Risk Auditor → Legal Guardian.")
 
 	thread_id = st.text_input("Thread ID", value="demo-thread")
 	query = st.text_area("User Query", value="What are the liability risks in the vendor agreements?", height=100)
@@ -266,6 +280,12 @@ def _render_graph_panel() -> None:
 				f"Retrieval Confidence: {result.get('retrieval_confidence', 0.0)} "
 				f"(warning threshold: {result.get('retrieval_warning_threshold', 0.35)})"
 			)
+			st.write(
+				f"Faithfulness: {result.get('faithfulness_score', 0.0)} | "
+				f"Answer Relevancy: {result.get('answer_relevancy_score', 0.0)}"
+			)
+			if result.get("correction_needed"):
+				st.warning(f"Correction needed: {result.get('correction_reason', 'Unspecified reason')}")
 			if result.get("retrieval_warning"):
 				st.info(result.get("retrieval_warning"))
 			if result.get("needs_clarification"):

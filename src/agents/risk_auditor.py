@@ -19,10 +19,12 @@ def risk_auditor_node(state: AgentState) -> AgentState:
 	retrieved_clauses = state.get("retrieved_clauses", [])
 
 	if not retrieved_clauses:
+		fallback_lines = [
+			"[LOW] Insufficient evidence | Please clarify contract and clause focus | Evidence: N/A"
+		]
 		return {
-			"risk_report": [
-				"[LOW] Insufficient evidence | Please clarify contract and clause focus | Evidence: N/A"
-			]
+			"risk_report": fallback_lines,
+			"final_answer": "\n".join(fallback_lines),
 		}
 
 	evidence_text = build_evidence_text(retrieved_clauses)
@@ -41,10 +43,15 @@ def risk_auditor_node(state: AgentState) -> AgentState:
 			risk_lines = [
 				"[LOW] Insufficient structured output | Re-run with clearer question | Evidence: N/A"
 			]
-		return {"risk_report": risk_lines}
-	except Exception as exc:
 		return {
-			"risk_report": [
-				f"[LOW] Auditor fallback activated | LLM call failed: {exc} | Evidence: Retrieved clauses only"
-			]
+			"risk_report": risk_lines,
+			"final_answer": "\n".join(risk_lines),
+		}
+	except Exception as exc:
+		fallback_lines = [
+			f"[LOW] Auditor fallback activated | LLM call failed: {exc} | Evidence: Retrieved clauses only"
+		]
+		return {
+			"risk_report": fallback_lines,
+			"final_answer": "\n".join(fallback_lines),
 		}

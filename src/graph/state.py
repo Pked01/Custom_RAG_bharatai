@@ -13,8 +13,14 @@ class AgentState(TypedDict, total=False):
 	current_doc_focus: str
 	retrieved_clauses: list[dict[str, Any]]
 	risk_report: list[str]
+	final_answer: str
 	retrieval_confidence: float
 	retrieval_warning_threshold: float
 	retrieval_warning: str
 	needs_clarification: bool
 	clarifying_question: str
+	faithfulness_score: float
+	answer_relevancy_score: float
+	correction_needed: bool
+	correction_reason: str
+	correction_attempts: int

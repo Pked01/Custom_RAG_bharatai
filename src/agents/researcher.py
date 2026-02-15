@@ -34,6 +34,8 @@ def _pick_document_focus(clauses: list[dict]) -> str:
 
 def researcher_node(state: AgentState) -> AgentState:
 	query = (state.get("rewritten_query") or state.get("user_query") or "").strip()
+	if state.get("correction_needed") and state.get("correction_reason"):
+		query = f"{query}\n\nCorrection directive: {state.get('correction_reason', '')}".strip()
 	if not query:
 		return {
 			"retrieved_clauses": [],

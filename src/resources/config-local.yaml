@@ -26,5 +26,11 @@ ingestion:
   chunk_overlap: 200
   reset_collection: false
 
+guardian:
+  enable_reflection: false
+  faithfulness_threshold: 0.8
+  max_correction_attempts: 2
+  focus_drift_penalty: 0.4
+
 
 

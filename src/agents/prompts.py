@@ -34,3 +34,35 @@ def build_risk_auditor_user_prompt(query: str, evidence_text: str) -> str:
 		f"Evidence Clauses:\n{evidence_text}\n\n"
 		"Return 3 to 7 bullets only."
 	)
+
+
+LEGAL_GUARDIAN_SYSTEM_PROMPT = """You are a legal QA judge validating answer quality.
+Evaluate only these two metrics:
+1) faithfulness_score in [0,1]: Are claims grounded in retrieved clauses?
+2) answer_relevancy_score in [0,1]: Does the answer address the user's question?
+
+Use current_doc_focus to check contract drift:
+- If answer appears to rely on a different contract than current_doc_focus, reduce faithfulness.
+
+Return strict JSON with keys:
+{
+  "faithfulness_score": float,
+  "answer_relevancy_score": float,
+  "correction_reason": string
+}
+No markdown. No extra keys.
+"""
+
+
+def build_legal_guardian_user_prompt(
+	user_query: str,
+	current_doc_focus: str,
+	final_answer: str,
+	evidence_text: str,
+) -> str:
+	return (
+		f"User Query:\n{user_query}\n\n"
+		f"Current Document Focus:\n{current_doc_focus or 'N/A'}\n\n"
+		f"Final Answer To Validate:\n{final_answer or 'N/A'}\n\n"
+		f"Retrieved Clauses:\n{evidence_text or 'N/A'}"
+	)

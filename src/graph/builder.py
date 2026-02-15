@@ -14,6 +14,7 @@ from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
+from src.agents.legal_guardian import legal_guardian_node, route_after_legal_guardian
 from src.agents.researcher import researcher_node
 from src.agents.risk_auditor import risk_auditor_node
 from src.agents.supervisor import query_rewriter_node, route_after_research
@@ -27,6 +28,7 @@ def build_graph():
 	graph.add_node("query_rewriter", query_rewriter_node)
 	graph.add_node("researcher", researcher_node)
 	graph.add_node("risk_auditor", risk_auditor_node)
+	graph.add_node("legal_guardian", legal_guardian_node)
 
 	graph.add_edge(START, "query_rewriter")
 	graph.add_edge("query_rewriter", "researcher")
@@ -38,7 +40,15 @@ def build_graph():
 			"END": END,
 		},
 	)
-	graph.add_edge("risk_auditor", END)
+	graph.add_edge("risk_auditor", "legal_guardian")
+	graph.add_conditional_edges(
+		"legal_guardian",
+		route_after_legal_guardian,
+		{
+			"researcher": "researcher",
+			"END": END,
+		},
+	)
 
 	return graph.compile(checkpointer=MemorySaver())
 

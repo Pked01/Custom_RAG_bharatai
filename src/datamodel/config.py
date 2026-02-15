@@ -36,7 +36,15 @@ class IngestionConfig(BaseModel):
 	reset_collection: bool
 
 
+class GuardianConfig(BaseModel):
+	enable_reflection: bool = False
+	faithfulness_threshold: float
+	max_correction_attempts: int
+	focus_drift_penalty: float
+
+
 class AppConfig(BaseModel):
 	llm: LLMConfig
 	embeddings: EmbeddingConfig
 	ingestion: IngestionConfig
+	guardian: GuardianConfig

@@ -6,7 +6,7 @@ from typing import Any, Callable, Literal
 
 import yaml
 
-from src.datamodel.config import AppConfig, EmbeddingConfig, IngestionConfig, LLMConfig
+from src.datamodel.config import AppConfig, EmbeddingConfig, GuardianConfig, IngestionConfig, LLMConfig
 
 
 def _to_bool(value: Any) -> bool:
@@ -139,23 +139,42 @@ def load_ingestion_config(config_path: str | Path = "src/resources/config-local.
 	)
 
 
+def load_guardian_config(config_path: str | Path = "src/resources/config-local.yaml") -> GuardianConfig:
+	data = _read_config_data(config_path)
+	guardian_data = _get_section(data, "guardian")
+	return _build_config_from_section(
+		section_data=guardian_data,
+		section_name="guardian",
+		config_class=GuardianConfig,
+		converters={
+			"enable_reflection": _to_bool,
+			"faithfulness_threshold": float,
+			"max_correction_attempts": int,
+			"focus_drift_penalty": float,
+		},
+	)
+
+
 def load_config(
 	config_path: str | Path = "src/resources/config-local.yaml",
-	section: Literal["all", "llm", "embeddings", "ingestion"] = "all",
-) -> AppConfig | LLMConfig | EmbeddingConfig | IngestionConfig:
+	section: Literal["all", "llm", "embeddings", "ingestion", "guardian"] = "all",
+) -> AppConfig | LLMConfig | EmbeddingConfig | IngestionConfig | GuardianConfig:
 	if section == "llm":
 		return load_llm_config(config_path)
 	if section == "embeddings":
 		return load_embeddings_config(config_path)
 	if section == "ingestion":
 		return load_ingestion_config(config_path)
+	if section == "guardian":
+		return load_guardian_config(config_path)
 	if section != "all":
-		raise ValueError("section must be one of: all, llm, embeddings, ingestion")
+		raise ValueError("section must be one of: all, llm, embeddings, ingestion, guardian")
 
 	llm = load_llm_config(config_path)
 	embeddings = load_embeddings_config(config_path)
 	ingestion = load_ingestion_config(config_path)
-	return AppConfig(llm=llm, embeddings=embeddings, ingestion=ingestion)
+	guardian = load_guardian_config(config_path)
+	return AppConfig(llm=llm, embeddings=embeddings, ingestion=ingestion, guardian=guardian)
 
 
 def get_api_key(api_key_env: str) -> str:
