@@ -49,7 +49,7 @@ The project is designed around two major pipelines:
 
 ## 4) Whole RAG Flow Chart
 
-![Mermaid flowchart illustrating the whole RAG flow](docs/images/whole_rag_flow_chart.png)
+![Mermaid flowchart illustrating the whole RAG flow](docs/images/whole_rag_chart.png)
 
 ---
 
