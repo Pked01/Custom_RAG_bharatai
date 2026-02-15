@@ -37,10 +37,23 @@ class IngestionConfig(BaseModel):
 
 
 class GuardianConfig(BaseModel):
-	enable_reflection: bool = False
+	mode: str = "evaluate_only"
 	faithfulness_threshold: float
 	max_correction_attempts: int
 	focus_drift_penalty: float
+
+
+class RetrievalConfig(BaseModel):
+	semantic_candidate_k: int
+	final_top_k: int
+	semantic_weight: float
+	keyword_weight: float
+	section_header_boost: float
+	doc_focus_boost: float
+	low_confidence_warning_threshold: float
+	enable_llm_reranker: bool
+	reranker_top_k: int
+	reranker_model: str | None = None
 
 
 class AppConfig(BaseModel):
@@ -48,3 +61,4 @@ class AppConfig(BaseModel):
 	embeddings: EmbeddingConfig
 	ingestion: IngestionConfig
 	guardian: GuardianConfig
+	retrieval: RetrievalConfig

@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import streamlit as st
+import streamlit.components.v1 as components
 from langchain_core.messages import AIMessage, HumanMessage
 
 from src.agents.researcher import researcher_node
@@ -12,7 +13,7 @@ from src.agents.supervisor import query_rewriter_node
 from src.agents.legal_guardian import legal_guardian_node
 from src.graph.builder import build_graph
 from src.ingestion.processor import DocumentProcessor
-from src.utils.config import load_config
+from src.utils.config import load_config, load_guardian_config
 
 
 st.set_page_config(page_title="Custom RAG Workbench", page_icon="🧪", layout="wide")
@@ -99,6 +100,75 @@ def _render_placeholder_panel(title: str, reason: str) -> None:
 	st.caption("This section is isolated in the UI so you can develop and test it independently once implementation is added.")
 
 
+def _render_mermaid(markup: str, height: int = 320) -> None:
+	html = f"""
+	<div class=\"mermaid\">\n{markup}\n</div>
+	<script type=\"module\">
+	  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+	  mermaid.initialize({{ startOnLoad: true }});
+	</script>
+	"""
+	components.html(html, height=height, scrolling=True)
+
+
+def _render_architecture_panel() -> None:
+	st.subheader("Architecture")
+	st.caption("Flowcharts from README rendered directly in Streamlit.")
+
+	agent_flow = """
+flowchart TD
+    A[User Query] --> B[Supervisor / Query Rewriter]
+    B --> C[Researcher Retrieval]
+    C --> D{Any Evidence Retrieved?}
+    D -- No --> E[Clarification Needed]
+    D -- Yes --> F[Risk Auditor]
+    F --> G[Legal Guardian]
+    G --> H{Reflection Enabled and Correction Needed?}
+    H -- Yes --> C
+    H -- No --> I[Final Output]
+"""
+
+	rag_flow = """
+flowchart LR
+    A[Raw Contracts .txt] --> B[Ingestion Processor]
+    B --> C[Semantic Chunks + Metadata]
+    C --> D[Embeddings]
+    D --> E[(Chroma Vector DB)]
+    Q[User Question] --> R[Query Rewriter]
+    R --> S[Retriever]
+    E --> S
+    S --> T[Evidence Chunks]
+    T --> U[Risk Auditor LLM]
+    U --> V[Legal Guardian LLM-as-Judge]
+    V --> W[Final Risk Report]
+"""
+
+	ingestion_flow = """
+flowchart TD
+    A[Load config-local.yaml] --> B[Read raw contracts]
+    B --> C[Parse title + preamble + sections]
+    C --> D[Create semantic chunks]
+    D --> E[Attach legal metadata]
+    E --> F[Embed chunks]
+    F --> G[Write to Chroma collection]
+"""
+
+	st.markdown("### Agent Flow")
+	_render_mermaid(agent_flow, height=360)
+	with st.expander("Show Mermaid code: Agent Flow"):
+		st.code(agent_flow, language="mermaid")
+
+	st.markdown("### Whole RAG Flow")
+	_render_mermaid(rag_flow, height=320)
+	with st.expander("Show Mermaid code: Whole RAG Flow"):
+		st.code(rag_flow, language="mermaid")
+
+	st.markdown("### Ingestion Flow")
+	_render_mermaid(ingestion_flow, height=300)
+	with st.expander("Show Mermaid code: Ingestion Flow"):
+		st.code(ingestion_flow, language="mermaid")
+
+
 def _state_to_json_safe(state: dict[str, Any]) -> dict[str, Any]:
 	json_safe: dict[str, Any] = {}
 	for key, value in state.items():
@@ -163,6 +233,8 @@ def _render_risk_report(state: dict[str, Any]) -> None:
 
 def _render_agents_panel() -> None:
 	st.subheader("Agents")
+	guardian_config = load_guardian_config()
+	default_reflection = (guardian_config.mode or "evaluate_only").strip().lower() == "reflect"
 	st.caption("Run nodes independently or run full pipeline. Supervisor behavior is implemented through the query rewriter step.")
 	st.info(
 		"Sequence: 1) Supervisor/Rewriter → 2) Researcher → 3) Risk Auditor → 4) Legal Guardian. "
@@ -180,6 +252,11 @@ def _render_agents_panel() -> None:
 
 	user_query = st.text_area("User Query", value=state.get("user_query", ""), height=100)
 	current_focus = st.text_input("Current Document Focus (optional)", value=state.get("current_doc_focus", ""))
+	enable_reflection = st.checkbox(
+		"Enable reflection loop (guardian can send flow back to researcher)",
+		value=bool(state.get("enable_reflection", default_reflection)),
+	)
+	state["enable_reflection"] = enable_reflection
 
 	col1, col2, col3, col6 = st.columns(4)
 	if col1.button("1) Run Supervisor/Rewriter"):
@@ -234,6 +311,8 @@ def _render_agents_panel() -> None:
 
 	st.markdown("### Outputs")
 	st.write(f"Rewritten Query: {state.get('rewritten_query', '')}")
+	st.write(f"Guardian Mode (config): {guardian_config.mode}")
+	st.write(f"Reflection Enabled (runtime): {state.get('enable_reflection', default_reflection)}")
 	st.write(
 		f"Retrieval Confidence: {state.get('retrieval_confidence', 0.0)} "
 		f"(warning threshold: {state.get('retrieval_warning_threshold', 0.35)})"
@@ -254,11 +333,18 @@ def _render_agents_panel() -> None:
 
 def _render_graph_panel() -> None:
 	st.subheader("Graph")
+	guardian_config = load_guardian_config()
+	default_reflection = (guardian_config.mode or "evaluate_only").strip().lower() == "reflect"
 	st.caption("Run full LangGraph flow with checkpointed memory by thread_id.")
 	st.info("Graph sequence: Supervisor/Rewriter → Researcher → (if evidence exists) Risk Auditor → Legal Guardian.")
 
 	thread_id = st.text_input("Thread ID", value="demo-thread")
 	query = st.text_area("User Query", value="What are the liability risks in the vendor agreements?", height=100)
+	enable_reflection = st.checkbox(
+		"Enable reflection loop for this graph run",
+		value=default_reflection,
+		key="graph_enable_reflection",
+	)
 
 	if st.button("Run Graph", type="primary"):
 		try:
@@ -267,6 +353,7 @@ def _render_graph_panel() -> None:
 				{
 					"messages": [HumanMessage(content=query)],
 					"user_query": query,
+					"enable_reflection": enable_reflection,
 				},
 				config={"configurable": {"thread_id": thread_id}},
 			)
@@ -276,6 +363,8 @@ def _render_graph_panel() -> None:
 
 			st.markdown("### Outputs")
 			st.write(f"Rewritten Query: {result.get('rewritten_query', '')}")
+			st.write(f"Guardian Mode (config): {guardian_config.mode}")
+			st.write(f"Reflection Enabled (runtime): {result.get('enable_reflection', enable_reflection)}")
 			st.write(
 				f"Retrieval Confidence: {result.get('retrieval_confidence', 0.0)} "
 				f"(warning threshold: {result.get('retrieval_warning_threshold', 0.35)})"
@@ -294,6 +383,12 @@ def _render_graph_panel() -> None:
 			_render_risk_report(result)
 		except Exception as exc:
 			st.error(f"Graph run failed: {exc}")
+			error_text = str(exc).lower()
+			if "401" in error_text or "user not found" in error_text or "unauthorized" in error_text:
+				st.info(
+					"Authentication failed. Check `llm.api_key_env` / `embeddings.api_key_env`, "
+					"ensure the environment variable exists, and verify the OpenRouter key is active."
+				)
 
 
 def main() -> None:
@@ -306,7 +401,7 @@ def main() -> None:
 
 	panel = st.sidebar.radio(
 		"Module",
-		options=["Ingestion", "Agents", "Graph", "Evaluation"],
+		options=["Ingestion", "Agents", "Graph", "Architecture", "Evaluation"],
 	)
 
 	if panel == "Ingestion":
@@ -315,6 +410,8 @@ def main() -> None:
 		_render_agents_panel()
 	elif panel == "Graph":
 		_render_graph_panel()
+	elif panel == "Architecture":
+		_render_architecture_panel()
 	else:
 		_render_placeholder_panel(
 			title="Evaluation",

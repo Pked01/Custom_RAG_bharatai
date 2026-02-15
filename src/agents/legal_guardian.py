@@ -28,6 +28,14 @@ def _guardian_config():
 	return load_guardian_config()
 
 
+def _is_reflection_enabled(state: AgentState) -> bool:
+	runtime_reflection = state.get("enable_reflection")
+	if isinstance(runtime_reflection, bool):
+		return runtime_reflection
+	mode = (_guardian_config().mode or "evaluate_only").strip().lower()
+	return mode == "reflect"
+
+
 def _extract_json_object(text: str) -> dict:
 	text = text.strip()
 	if not text:
@@ -128,7 +136,7 @@ def legal_guardian_node(state: AgentState) -> AgentState:
 
 def route_after_legal_guardian(state: AgentState) -> Literal["researcher", "END"]:
 	guardian_config = _guardian_config()
-	if not guardian_config.enable_reflection:
+	if not _is_reflection_enabled(state):
 		return "END"
 	if state.get("correction_needed", False):
 		attempts = int(state.get("correction_attempts", 0))

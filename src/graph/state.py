@@ -24,3 +24,4 @@ class AgentState(TypedDict, total=False):
 	correction_needed: bool
 	correction_reason: str
 	correction_attempts: int
+	enable_reflection: bool

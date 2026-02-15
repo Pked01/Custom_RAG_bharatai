@@ -27,10 +27,22 @@ ingestion:
   reset_collection: false
 
 guardian:
-  enable_reflection: false
+  mode: evaluate_only # off | evaluate_only | reflect
   faithfulness_threshold: 0.8
   max_correction_attempts: 2
   focus_drift_penalty: 0.4
+
+retrieval:
+  semantic_candidate_k: 12
+  final_top_k: 6
+  semantic_weight: 0.7
+  keyword_weight: 0.3
+  section_header_boost: 0.15
+  doc_focus_boost: 0.15
+  low_confidence_warning_threshold: 0.35
+  enable_llm_reranker: true
+  reranker_top_k: 6
+  reranker_model: openai/gpt-4.1-mini
 
 
 

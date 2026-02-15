@@ -6,7 +6,7 @@ from typing import Any, Callable, Literal
 
 import yaml
 
-from src.datamodel.config import AppConfig, EmbeddingConfig, GuardianConfig, IngestionConfig, LLMConfig
+from src.datamodel.config import AppConfig, EmbeddingConfig, GuardianConfig, IngestionConfig, LLMConfig, RetrievalConfig
 
 
 def _to_bool(value: Any) -> bool:
@@ -23,6 +23,9 @@ def _to_bool(value: Any) -> bool:
 
 def _read_config_data(config_path: str | Path = "src/resources/config-local.yaml") -> dict[str, Any]:
 	path = Path(config_path)
+	if not path.is_absolute():
+		project_root = Path(__file__).resolve().parents[2]
+		path = project_root / path
 	if not path.exists():
 		raise FileNotFoundError(f"Config file not found: {path}")
 
@@ -147,7 +150,7 @@ def load_guardian_config(config_path: str | Path = "src/resources/config-local.y
 		section_name="guardian",
 		config_class=GuardianConfig,
 		converters={
-			"enable_reflection": _to_bool,
+			"mode": lambda value: str(value).strip().lower(),
 			"faithfulness_threshold": float,
 			"max_correction_attempts": int,
 			"focus_drift_penalty": float,
@@ -155,10 +158,32 @@ def load_guardian_config(config_path: str | Path = "src/resources/config-local.y
 	)
 
 
+def load_retrieval_config(config_path: str | Path = "src/resources/config-local.yaml") -> RetrievalConfig:
+	data = _read_config_data(config_path)
+	retrieval_data = _get_section(data, "retrieval")
+	return _build_config_from_section(
+		section_data=retrieval_data,
+		section_name="retrieval",
+		config_class=RetrievalConfig,
+		converters={
+			"semantic_candidate_k": int,
+			"final_top_k": int,
+			"semantic_weight": float,
+			"keyword_weight": float,
+			"section_header_boost": float,
+			"doc_focus_boost": float,
+			"low_confidence_warning_threshold": float,
+			"enable_llm_reranker": _to_bool,
+			"reranker_top_k": int,
+			"reranker_model": lambda value: str(value).strip() if value is not None else None,
+		},
+	)
+
+
 def load_config(
 	config_path: str | Path = "src/resources/config-local.yaml",
-	section: Literal["all", "llm", "embeddings", "ingestion", "guardian"] = "all",
-) -> AppConfig | LLMConfig | EmbeddingConfig | IngestionConfig | GuardianConfig:
+	section: Literal["all", "llm", "embeddings", "ingestion", "guardian", "retrieval"] = "all",
+) -> AppConfig | LLMConfig | EmbeddingConfig | IngestionConfig | GuardianConfig | RetrievalConfig:
 	if section == "llm":
 		return load_llm_config(config_path)
 	if section == "embeddings":
@@ -167,14 +192,17 @@ def load_config(
 		return load_ingestion_config(config_path)
 	if section == "guardian":
 		return load_guardian_config(config_path)
+	if section == "retrieval":
+		return load_retrieval_config(config_path)
 	if section != "all":
-		raise ValueError("section must be one of: all, llm, embeddings, ingestion, guardian")
+		raise ValueError("section must be one of: all, llm, embeddings, ingestion, guardian, retrieval")
 
 	llm = load_llm_config(config_path)
 	embeddings = load_embeddings_config(config_path)
 	ingestion = load_ingestion_config(config_path)
 	guardian = load_guardian_config(config_path)
-	return AppConfig(llm=llm, embeddings=embeddings, ingestion=ingestion, guardian=guardian)
+	retrieval = load_retrieval_config(config_path)
+	return AppConfig(llm=llm, embeddings=embeddings, ingestion=ingestion, guardian=guardian, retrieval=retrieval)
 
 
 def get_api_key(api_key_env: str) -> str:

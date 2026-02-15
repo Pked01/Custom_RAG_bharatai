@@ -66,3 +66,23 @@ def build_legal_guardian_user_prompt(
 		f"Final Answer To Validate:\n{final_answer or 'N/A'}\n\n"
 		f"Retrieved Clauses:\n{evidence_text or 'N/A'}"
 	)
+
+
+RETRIEVAL_RERANKER_SYSTEM_PROMPT = """You are a legal retrieval reranker.
+Rank candidate clauses by how directly they answer the user question.
+Prefer precise clause match over broad thematic similarity.
+Use metadata (section header/title) as additional signal.
+Return strict JSON only:
+{
+  "ranked_indices": [<1-based candidate indices in best-first order>]
+}
+No markdown. No extra keys.
+"""
+
+
+def build_retrieval_reranker_user_prompt(user_query: str, candidates_text: str) -> str:
+	return (
+		f"User Query:\n{user_query}\n\n"
+		f"Candidates:\n{candidates_text}\n\n"
+		"Return ranked_indices covering all candidates exactly once."
+	)

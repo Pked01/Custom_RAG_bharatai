@@ -7,7 +7,7 @@ A contract-focused Multi-Agent RAG system for legal document ingestion, retrieva
 The project is designed around two major pipelines:
 
 - **Ingestion pipeline**: parse raw contracts, preserve legal structure, chunk semantically, embed, and persist into Chroma.
-- **Query pipeline (Agent/Graph)**: rewrite ambiguous follow-up queries, retrieve relevant clauses, and run a risk-auditor critic that returns citation-backed findings.
+- **Query pipeline (Agent/Graph)**: rewrite ambiguous follow-up queries, retrieve relevant clauses, generate a risk-oriented answer, and validate output quality through a Legal Guardian node.
 
 ### Key Design Principles
 
@@ -28,8 +28,9 @@ The project is designed around two major pipelines:
 
 ### Researcher
 
-- Retrieves top candidate chunks from Chroma using embedding similarity.
+- Retrieves top candidate chunks from Chroma using hybrid retrieval (semantic similarity + lexical/header/doc-focus signals).
 - Returns structured evidence objects with metadata and scores.
+- Supports optional LLM reranking over top candidates.
 - Sets retrieval confidence and warning/clarification signals.
 
 ### Risk Auditor
@@ -38,11 +39,45 @@ The project is designed around two major pipelines:
 - Produces structured risk-style findings with severity and citations.
 - Uses a strict critic-style system prompt.
 
+### Legal Guardian
+
+- Evaluates the Risk Auditor output for faithfulness and relevancy against retrieved evidence.
+- Produces guardian scores and pass/fail control flags.
+- Can trigger correction loops when `guardian.mode=reflect` and thresholds are not met.
+
 ---
 
 ## 3) Agent Flow Chart
 
 ![Mermaid flowchart illustrating the agent interactions](docs/images/agent_flow_chart.png)
+
+### Mermaid Source (Agent Flow)
+
+```mermaid
+flowchart TD
+   U[User Query] --> S[Supervisor / Query Rewriter]
+   S --> R[Researcher]
+   R -->|Retrieve evidence + confidence| A[Risk Auditor]
+   A -->|Draft risk report + final answer| G[Legal Guardian]
+
+   G --> D{Guardian mode}
+   D -->|off| OUT[Return auditor output]
+   D -->|evaluate_only| E{Pass thresholds?}
+   D -->|reflect| F{Pass thresholds?}
+
+   E -->|yes| OUT
+   E -->|no| OUTW[Return output + guardian warning]
+
+   F -->|yes| OUT
+   F -->|no| C[Set correction flags]
+   C --> R2[Re-run Researcher with guidance]
+   R2 --> A2[Re-run Risk Auditor]
+   A2 --> G2[Re-evaluate in Legal Guardian]
+   G2 --> L{Reflection limit reached?}
+   L -->|no, still failing| C
+   L -->|yes| OUTW
+   G2 -->|pass| OUT
+```
 
 
 ---
@@ -50,6 +85,33 @@ The project is designed around two major pipelines:
 ## 4) Whole RAG Flow Chart
 
 ![Mermaid flowchart illustrating the whole RAG flow](docs/images/whole_rag_chart.png)
+
+### Mermaid Source (Whole RAG)
+
+```mermaid
+flowchart LR
+   subgraph Ingestion
+      I1[Load raw contracts] --> I2[Parse title/preamble/sections]
+      I2 --> I3[Semantic chunking]
+      I3 --> I4[Attach metadata]
+      I4 --> I5[Embed chunks]
+      I5 --> I6[(Chroma Vector DB)]
+   end
+
+   subgraph QueryRuntime[Query Runtime / LangGraph]
+      Q1[User Query + thread_id] --> Q2[Supervisor / Rewriter]
+      Q2 --> Q3[Researcher: hybrid retrieval + optional reranker]
+      Q3 --> Q4[Risk Auditor]
+      Q4 --> Q5[Legal Guardian]
+      Q5 --> Q6{Route decision}
+      Q6 -->|pass| Q7[Final Answer + Risk Report]
+      Q6 -->|reflect fail| Q8[Correction loop]
+      Q8 --> Q3
+   end
+
+   I6 --> Q3
+   Q7 --> UI[Streamlit: Agents/Graph views]
+```
 
 ---
 
@@ -81,6 +143,22 @@ The project is designed around two major pipelines:
 
 ![Mermaid flowchart illustrating the ingestion flow](docs/images/ingestion_flow_chart.png)                                       
 
+### Mermaid Source (Ingestion)
+
+```mermaid
+flowchart TD
+   A[Raw .txt files] --> B[Read contract text]
+   B --> C[Extract title + preamble + numbered sections]
+   C --> D[Build section-aware chunks]
+   D --> E[Construct chunk text: Title / Section / Content]
+   E --> F[Attach metadata]
+   F --> G[Generate embeddings]
+   G --> H[(Chroma collection)]
+
+   F -. metadata fields .-> M[source, file_name, document_title, section_number, section_header, chunk_index]
+   H -. vector metric .-> V[hnsw:space from config]
+```
+
 ---
 
 ## 6) Streamlit App Capabilities
@@ -99,15 +177,18 @@ The Streamlit app (`streamlit_app.py`) provides module-wise testing:
 - Step-by-step execution:
   1. Supervisor/Rewriter
   2. Researcher
-  3. Risk Auditor
+   3. Risk Auditor
+   4. Legal Guardian
 - One-click full pipeline execution.
-- Shows full state snapshot, retrieved chunks, confidence, warnings, and risk report.
+- Supports runtime reflection toggle and max reflection count.
+- Shows full state snapshot, retrieved chunks, confidence, warnings, guardian scores, and risk report.
 
 ### Graph Panel
 
 - Runs full LangGraph flow with `thread_id`.
 - Uses checkpointed memory for multi-turn behavior.
-- Shows final state, retrieved chunks, and risk report.
+- Includes conditional routing through Legal Guardian and optional reflection loops.
+- Shows final state, retrieved chunks, guardian decisions, and risk report.
 
 ### Evaluation Panel
 
@@ -124,6 +205,8 @@ Sections:
 - `llm`: provider, base URL, model, generation params, optional headers.
 - `embeddings`: provider, base URL, embedding model, optional headers.
 - `ingestion`: raw path, persist path, collection name, vector space, chunk params, reset flag.
+- `guardian`: mode (`off | evaluate_only | reflect`), thresholds, reflection limits.
+- `retrieval`: hybrid retrieval weights, top-k, reranker toggle/model controls.
 
 ---
 
@@ -138,7 +221,6 @@ Sections:
 
 ## 9) Future Improvements
 
-- Hybrid retrieval (metadata + lexical + semantic).
-- LLM reranking over top-k candidates.
-- Better score calibration and retrieval diagnostics.
 - Evaluation metrics dashboard in Streamlit.
+- Per-node latency and token telemetry.
+- Automatic retrieval/guardian threshold tuning from eval datasets.
