@@ -2,6 +2,23 @@
 
 A contract-focused Multi-Agent RAG system for legal document ingestion, retrieval, and risk-oriented analysis.
 
+## Table of Contents
+
+- [1) Process Overview](#1-process-overview)
+- [2) Agents and Responsibilities](#2-agents-and-responsibilities)
+- [3) Agent Flow Chart](#3-agent-flow-chart)
+- [4) Whole RAG Flow Chart](#4-whole-rag-flow-chart)
+- [5) Ingestion Flow and Key Considerations](#5-ingestion-flow-and-key-considerations)
+- [6) Streamlit App Capabilities](#6-streamlit-app-capabilities)
+- [7) Screenshots (Streamlit + CLI)](#7-screenshots-streamlit--cli)
+- [8) How the End-to-End Process Works](#8-how-the-end-to-end-process-works)
+- [9) Getting Started](#9-getting-started)
+- [10) Configuration Summary](#10-configuration-summary)
+- [11) Troubleshooting](#11-troubleshooting)
+- [12) Example Questions](#12-example-questions)
+- [13) Suggested Run Sequence](#13-suggested-run-sequence)
+- [14) Future Improvements](#14-future-improvements)
+
 ## 1) Process Overview
 
 The project is designed around two major pipelines:
@@ -70,7 +87,6 @@ Why it exists:
 
 ## 3) Agent Flow Chart
 
-![Mermaid flowchart illustrating the agent interactions](docs/images/agent_flow_chart.png)
 
 ### Mermaid Source (Agent Flow)
 
@@ -105,7 +121,6 @@ flowchart TD
 
 ## 4) Whole RAG Flow Chart
 
-![Mermaid flowchart illustrating the whole RAG flow](docs/images/whole_rag_chart.png)
 
 ### Mermaid Source (Whole RAG)
 
@@ -162,7 +177,6 @@ flowchart LR
 
 ### Ingestion Flow Chart
 
-![Mermaid flowchart illustrating the ingestion flow](docs/images/ingestion_flow_chart.png)                                       
 
 ### Mermaid Source (Ingestion)
 
