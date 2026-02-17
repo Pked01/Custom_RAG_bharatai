@@ -56,9 +56,19 @@ class RetrievalConfig(BaseModel):
 	reranker_model: str | None = None
 
 
+class SupervisorConfig(BaseModel):
+	"""Configuration for multi-turn query rewriting and context selection."""
+
+	context_overlap_weight: float = 0.85
+	context_recency_weight: float = 0.15
+	context_top_k: int = 3
+	context_max_human_msgs: int = 8
+
+
 class AppConfig(BaseModel):
 	llm: LLMConfig
 	embeddings: EmbeddingConfig
 	ingestion: IngestionConfig
 	guardian: GuardianConfig
 	retrieval: RetrievalConfig
+	supervisor: SupervisorConfig

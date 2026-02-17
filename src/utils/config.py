@@ -6,7 +6,15 @@ from typing import Any, Callable, Literal
 
 import yaml
 
-from src.datamodel.config import AppConfig, EmbeddingConfig, GuardianConfig, IngestionConfig, LLMConfig, RetrievalConfig
+from src.datamodel.config import (
+	AppConfig,
+	EmbeddingConfig,
+	GuardianConfig,
+	IngestionConfig,
+	LLMConfig,
+	RetrievalConfig,
+	SupervisorConfig,
+)
 
 
 def _to_bool(value: Any) -> bool:
@@ -180,10 +188,26 @@ def load_retrieval_config(config_path: str | Path = "src/resources/config-local.
 	)
 
 
+def load_supervisor_config(config_path: str | Path = "src/resources/config-local.yaml") -> SupervisorConfig:
+	data = _read_config_data(config_path)
+	supervisor_data = _get_section(data, "supervisor")
+	return _build_config_from_section(
+		section_data=supervisor_data,
+		section_name="supervisor",
+		config_class=SupervisorConfig,
+		converters={
+			"context_overlap_weight": float,
+			"context_recency_weight": float,
+			"context_top_k": int,
+			"context_max_human_msgs": int,
+		},
+	)
+
+
 def load_config(
 	config_path: str | Path = "src/resources/config-local.yaml",
-	section: Literal["all", "llm", "embeddings", "ingestion", "guardian", "retrieval"] = "all",
-) -> AppConfig | LLMConfig | EmbeddingConfig | IngestionConfig | GuardianConfig | RetrievalConfig:
+	section: Literal["all", "llm", "embeddings", "ingestion", "guardian", "retrieval", "supervisor"] = "all",
+) -> AppConfig | LLMConfig | EmbeddingConfig | IngestionConfig | GuardianConfig | RetrievalConfig | SupervisorConfig:
 	if section == "llm":
 		return load_llm_config(config_path)
 	if section == "embeddings":
@@ -194,15 +218,25 @@ def load_config(
 		return load_guardian_config(config_path)
 	if section == "retrieval":
 		return load_retrieval_config(config_path)
+	if section == "supervisor":
+		return load_supervisor_config(config_path)
 	if section != "all":
-		raise ValueError("section must be one of: all, llm, embeddings, ingestion, guardian, retrieval")
+		raise ValueError("section must be one of: all, llm, embeddings, ingestion, guardian, retrieval, supervisor")
 
 	llm = load_llm_config(config_path)
 	embeddings = load_embeddings_config(config_path)
 	ingestion = load_ingestion_config(config_path)
 	guardian = load_guardian_config(config_path)
 	retrieval = load_retrieval_config(config_path)
-	return AppConfig(llm=llm, embeddings=embeddings, ingestion=ingestion, guardian=guardian, retrieval=retrieval)
+	supervisor = load_supervisor_config(config_path)
+	return AppConfig(
+		llm=llm,
+		embeddings=embeddings,
+		ingestion=ingestion,
+		guardian=guardian,
+		retrieval=retrieval,
+		supervisor=supervisor,
+	)
 
 
 def get_api_key(api_key_env: str) -> str:

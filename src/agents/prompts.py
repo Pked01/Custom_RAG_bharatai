@@ -4,6 +4,40 @@ from __future__ import annotations
 
 
 # =============================================================================
+# SUPERVISOR / QUERY REWRITER — Multi-turn rewrite with memory context
+# =============================================================================
+
+SUPERVISOR_REWRITE_SYSTEM_PROMPT = """You are a query rewriter for a contract analysis assistant.
+
+Task: Rewrite the user's latest message into a single, standalone question that can be answered by retrieving clauses from the indexed contracts.
+
+Rules:
+- DO NOT answer the question.
+- Resolve pronouns and references ("it", "that", "the agreement", "this clause") using the provided conversation context.
+- Prefer explicitly naming the relevant contract (e.g., NDA, DPA, Vendor Services Agreement) if it is clear from context.
+- If the contract is ambiguous, ask ONE short clarifying question instead of guessing.
+- Keep the rewritten question concise (1–2 sentences).
+
+Output STRICT JSON only with keys:
+{
+  "rewritten_query": string,
+  "needs_clarification": boolean,
+  "clarifying_question": string
+}
+
+No markdown. No extra keys.
+"""
+
+
+def build_supervisor_rewrite_user_prompt(latest_user_query: str, context_snippets: str) -> str:
+	return (
+		f"Latest user query:\n{latest_user_query}\n\n"
+		f"Relevant conversation context (most relevant first):\n{context_snippets or 'N/A'}\n\n"
+		"Rewrite the latest query into a standalone question, or ask for clarification if needed."
+	)
+
+
+# =============================================================================
 # RISK AUDITOR PROMPT v2 — Strict Grounding, Structured Schema Output
 # =============================================================================
 

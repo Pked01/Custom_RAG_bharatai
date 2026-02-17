@@ -1,48 +1,54 @@
 llm:
   provider: openrouter
   base_url: https://openrouter.ai/api/v1/chat/completions
-  api_key_env: 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
-  model: openai/gpt-4.1
-  temperature: 0.0
-  top_p: 1.0
-  max_tokens: 1200
-  http_referer: null
-  x_title: null
+  api_key_env: sk-or-v1-c55ade0eecb850810812bc6dd2be8a668cf7f77be77a0d6b38906842a559  # Prefer ENV var name (e.g., OPENROUTER_API_KEY); literal sk-... also works.
+  model: openai/gpt-4.1                 # Main reasoning model used by agents (auditor/guardian/reranker). Higher quality = higher cost/latency.
+  temperature: 0.0                      # Determinism control. Keep 0.0 for audit-style repeatable outputs.
+  top_p: 1.0                            # Nucleus sampling. Leave at 1.0 when temperature is 0.0.
+  max_tokens: 1000                      # Response budget for LLM calls. Increase if answers get cut off.
+  http_referer: null                    # Optional OpenRouter headers (billing/analytics).
+  x_title: null                         # Optional OpenRouter headers (billing/analytics).
 
 embeddings:
   provider: openrouter
   base_url: https://openrouter.ai/api/v1/embeddings
-  api_key_env: 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
-  model: openai/text-embedding-3-large
-  http_referer: null
-  x_title: null
+  api_key_env: sk-or-v1-c55ade0eecb850810812bc6dd2be8a668cf7f77be77a0d6b38906842a559  # Prefer ENV var name; embeddings use the same key.
+  model: openai/text-embedding-3-large  # Embedding model for retrieval. Better embeddings improve clause recall.
+  http_referer: null                    # Optional OpenRouter headers.
+  x_title: null                         # Optional OpenRouter headers.
 
 ingestion:
-  raw_dir: data/raw
-  persist_dir: data/chroma_db
-  collection_name: contracts
-  vector_space: cosine
-  chunk_size: 1100
-  chunk_overlap: 200
-  reset_collection: false
+  raw_dir: data/raw                     # Directory containing raw .txt contracts.
+  persist_dir: data/chroma_db           # Chroma persistence path for embeddings + metadata.
+  collection_name: contracts            # Chroma collection name.
+  vector_space: cosine                  # Vector metric: cosine | l2 | ip. Changing this typically requires re-ingestion.
+  chunk_size: 1100                      # Target chunk size (characters). Larger chunks preserve context but may reduce precision.
+  chunk_overlap: 200                    # Overlap between adjacent chunks. Helps cross-sentence continuity at retrieval time.
+  reset_collection: false               # If true, clears and rebuilds the Chroma collection on ingestion.
 
 guardian:
   mode: evaluate_only # off | evaluate_only | reflect
-  faithfulness_threshold: 0.8
-  max_correction_attempts: 2
-  focus_drift_penalty: 0.4
+  faithfulness_threshold: 0.8           # If faithfulness_score < threshold, mark correction_needed and (in reflect mode) retry retrieval.
+  max_correction_attempts: 2            # Max reflection retries. Higher = better quality, more cost/latency.
+  focus_drift_penalty: 0.4              # Clamp faithfulness when retrieved clauses drift away from current_doc_focus (multi-turn stability).
+
+supervisor:
+  context_overlap_weight: 0.85          # Weight for lexical overlap when selecting the most relevant prior turns.
+  context_recency_weight: 0.15          # Weight for recency when selecting prior turns (helps continuity).
+  context_top_k: 3                      # Number of most relevant prior user turns to feed to the LLM rewriter.
+  context_max_human_msgs: 8             # Hard cap on prior human messages included as rewrite context (controls tokens/cost).
 
 retrieval:
-  semantic_candidate_k: 12
-  final_top_k: 6
-  semantic_weight: 0.7
-  keyword_weight: 0.3
-  section_header_boost: 0.15
-  doc_focus_boost: 0.15
-  low_confidence_warning_threshold: 0.35
-  enable_llm_reranker: true
-  reranker_top_k: 6
-  reranker_model: openai/gpt-4.1-mini
+  semantic_candidate_k: 12              # Initial semantic retrieval breadth from Chroma.
+  final_top_k: 6                        # Evidence chunks passed to the Risk Auditor.
+  semantic_weight: 0.7                  # Weight for normalized semantic similarity.
+  keyword_weight: 0.3                   # Weight for keyword overlap (helps exact clause matching).
+  section_header_boost: 0.15            # Boost when query matches section header tokens (e.g., "Indemnification").
+  doc_focus_boost: 0.15                 # Boost when chunk's document matches current_doc_focus (multi-turn continuity).
+  low_confidence_warning_threshold: 0.35  # Below this, UI can warn that retrieval is weak / ask to clarify.
+  enable_llm_reranker: true             # If true, rerank top candidates using an LLM for better precision (slower).
+  reranker_top_k: 6                     # How many top candidates to rerank.
+  reranker_model: openai/gpt-4.1-mini   # LLM used for reranking. Smaller model is usually sufficient.
 
 
 
